@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="description" content="Los recortes de placa que guardó el taller: de qué placa son, cuánto miden y si te entra una pieza.">
+<title>Sobrantes del taller</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23161616'/%3E%3Crect x='5' y='13' width='22' height='12' fill='%230f62fe'/%3E%3Crect x='5' y='7' width='13' height='4' fill='%2378a9ff'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;600&display=swap">
+<link rel="stylesheet" href="sobrantes.css?v=d87ad411d6">
+<script>
+  try {
+    var tema = localStorage.getItem("sobrantes-tema");
+    if (tema === "light" || tema === "dark") document.documentElement.setAttribute("data-theme", tema);
+  } catch (e) {}
+</script>
+</head>
+<body>
+<header class="shell">
+  <div class="shell__marca"><span class="shell__app">Tool Design</span><span class="shell__seccion">Sobrantes</span></div>
+  <p class="shell__estado" id="estado">Cargando la lista…</p>
+  <button class="shell__salir" id="salir" type="button" hidden>Salir</button>
+  <button class="shell__tema" id="tema" type="button" aria-label="Cambiar el tema" title="Tema claro u oscuro">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 4a12 12 0 1 0 0 24 12 12 0 0 0 0-24Zm0 2v20a10 10 0 0 1 0-20Z"/></svg>
+  </button>
+</header>
+
+<div class="contenido">
+  <div class="aviso" id="aviso" role="status" hidden>
+    <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2a14 14 0 1 0 0 28 14 14 0 0 0 0-28Zm-1 6h2v2h-2Zm3 16h-4v-2h1v-8h-1v-2h3v10h1Z"/></svg>
+    <div>
+      <p class="aviso__titulo" id="aviso-titulo"></p>
+      <p class="aviso__texto" id="aviso-texto"></p>
+    </div>
+  </div>
+
+  <p class="cargando" id="cargando">Cargando la lista de recortes…</p>
+  <p class="error" id="error" hidden></p>
+
+  <section class="entrada" id="entrada" hidden aria-labelledby="entrada-titulo">
+    <form class="entrada__tarjeta" id="entrada-form">
+      <p class="entrada__rotulo">Tool Design · Sobrantes</p>
+      <h1 class="entrada__titulo" id="entrada-titulo">Entrá para ver los recortes</h1>
+      <p class="entrada__texto">La lista está cerrada con una contraseña. Se abre acá, en este equipo: la contraseña no viaja a ningún lado.</p>
+      <div class="campo">
+        <label for="clave">Contraseña</label>
+        <div class="entrada__clave">
+          <input id="clave" name="password" type="password" autocomplete="current-password" autocapitalize="off" spellcheck="false" required>
+          <button class="entrada__ver" id="ver-clave" type="button" aria-pressed="false">Mostrar</button>
+        </div>
+      </div>
+      <label class="check"><input id="recordar" type="checkbox"> Recordarme en este equipo</label>
+      <p class="ayuda">No lo tildes en una compu que usa otra gente.</p>
+      <p class="entrada__error" id="entrada-error" role="alert" hidden>La contraseña no es correcta. Fijate las mayúsculas y los espacios entre palabras.</p>
+      <button class="boton entrada__boton" id="entrar" type="submit">Entrar</button>
+    </form>
+  </section>
+
+  <div class="app" id="app" hidden>
+    <aside class="filtros" aria-label="Buscar y filtrar">
+      <details class="filtros__plegable" id="plegable" open>
+        <summary>Buscar y filtrar <span class="filtros__activos" id="filtros-activos"></span></summary>
+        <div class="filtros__cuerpo">
+          <div class="campo">
+            <label for="buscar">Buscar</label>
+            <input id="buscar" type="search" placeholder="Placa, color, marca o número (S12)" autocomplete="off" spellcheck="false">
+          </div>
+
+          <fieldset class="grupo">
+            <legend>¿Me entra esta pieza?</legend>
+            <div class="fila-2">
+              <div class="campo">
+                <label for="pieza-largo">Largo (mm)</label>
+                <input id="pieza-largo" type="number" inputmode="decimal" min="0" step="0.1" placeholder="600">
+              </div>
+              <div class="campo">
+                <label for="pieza-ancho">Ancho (mm)</label>
+                <input id="pieza-ancho" type="number" inputmode="decimal" min="0" step="0.1" placeholder="400">
+              </div>
+            </div>
+            <div class="fila-2">
+              <div class="campo">
+                <label for="margen">Margen del borde (mm)</label>
+                <input id="margen" type="number" inputmode="decimal" min="0" step="0.5" value="0">
+              </div>
+              <div class="campo">
+                <label for="separacion">Entre piezas (mm)</label>
+                <input id="separacion" type="number" inputmode="decimal" min="0" step="0.5" value="0">
+              </div>
+            </div>
+            <label class="check"><input id="respetar-veta" type="checkbox" checked> El largo de la pieza va con la veta</label>
+            <p class="ayuda">Vale para las placas con veta. Sin veta, la pieza se puede girar. Cuántas entran es una cuenta rápida en filas y columnas: el acomodo de verdad lo hace la app al armar el pedido.</p>
+          </fieldset>
+
+          <fieldset class="grupo">
+            <legend>Veta</legend>
+            <div class="segmentos" role="radiogroup" aria-label="Veta">
+              <label><input type="radio" name="veta" value="todas" checked><span>Todas</span></label>
+              <label><input type="radio" name="veta" value="con"><span>Con veta</span></label>
+              <label><input type="radio" name="veta" value="sin"><span>Sin veta</span></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="grupo" id="grupo-espesor">
+            <legend>Espesor</legend>
+            <div class="etiquetas" id="espesores"></div>
+          </fieldset>
+
+          <fieldset class="grupo">
+            <legend>Placa</legend>
+            <input id="buscar-placa" class="mini" type="search" placeholder="Achicar la lista de placas" autocomplete="off" spellcheck="false" aria-label="Achicar la lista de placas">
+            <div class="lista-placas" id="placas"></div>
+          </fieldset>
+
+          <button class="boton boton--fantasma" id="limpiar" type="button">Limpiar filtros</button>
+        </div>
+      </details>
+    </aside>
+
+    <main class="principal">
+      <section class="datos" aria-label="Resumen de lo que se ve">
+        <div class="dato">
+          <p class="dato__rotulo">Recortes</p>
+          <p class="dato__valor" id="d-cantidad">—</p>
+          <p class="dato__nota" id="d-cantidad-nota"></p>
+        </div>
+        <div class="dato">
+          <p class="dato__rotulo">Superficie</p>
+          <p class="dato__valor" id="d-superficie">—</p>
+          <p class="dato__nota" id="d-superficie-nota"></p>
+        </div>
+        <div class="dato">
+          <p class="dato__rotulo">Placas distintas</p>
+          <p class="dato__valor" id="d-placas">—</p>
+          <p class="dato__nota" id="d-placas-nota"></p>
+        </div>
+        <div class="dato">
+          <p class="dato__rotulo">El más grande</p>
+          <p class="dato__valor" id="d-mayor">—</p>
+          <p class="dato__nota" id="d-mayor-nota"></p>
+        </div>
+      </section>
+
+      <section class="graficos">
+        <figure class="tarjeta">
+          <figcaption class="tarjeta__cabeza">
+            <span class="tarjeta__titulo">Largo y ancho de cada recorte</span>
+            <span class="leyenda" id="leyenda"></span>
+          </figcaption>
+          <div class="lienzo" id="lienzo">
+            <canvas id="dispersion" role="img" aria-label="Cada recorte es un punto: a lo ancho, su largo; a lo alto, su ancho."></canvas>
+            <div class="globo" id="globo" hidden></div>
+          </div>
+        </figure>
+        <figure class="tarjeta">
+          <figcaption class="tarjeta__cabeza">
+            <span class="tarjeta__titulo">Superficie por placa</span>
+            <span class="tarjeta__nota">Tocá una para filtrar</span>
+          </figcaption>
+          <ol class="barras" id="barras"></ol>
+        </figure>
+      </section>
+
+      <div class="abajo">
+        <section class="tarjeta" aria-labelledby="titulo-tabla">
+          <div class="tarjeta__cabeza">
+            <h2 class="tarjeta__titulo" id="titulo-tabla">Recortes</h2>
+            <p class="tarjeta__nota" id="cuenta"></p>
+          </div>
+          <div class="tabla" id="tabla" role="table" aria-labelledby="titulo-tabla" aria-rowcount="1">
+            <div class="tabla__fila tabla__cabecera" role="row" aria-rowindex="1">
+              <div role="columnheader" class="c-dibujo"><span class="sin-orden"></span></div>
+              <div role="columnheader" class="c-numero" data-orden="numero"><button type="button">N°<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 11 3 6l.7-.7L8 9.6l4.3-4.3.7.7Z"/></svg></button></div>
+              <div role="columnheader" class="c-placa" data-orden="placa"><button type="button">Placa y veta<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 11 3 6l.7-.7L8 9.6l4.3-4.3.7.7Z"/></svg></button></div>
+              <div role="columnheader" class="c-medida" data-orden="largo"><button type="button">Largo × ancho<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 11 3 6l.7-.7L8 9.6l4.3-4.3.7.7Z"/></svg></button></div>
+              <div role="columnheader" class="c-area" data-orden="area"><button type="button">m²<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 11 3 6l.7-.7L8 9.6l4.3-4.3.7.7Z"/></svg></button></div>
+              <div role="columnheader" class="c-fecha" data-orden="fecha"><button type="button">Guardado<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 11 3 6l.7-.7L8 9.6l4.3-4.3.7.7Z"/></svg></button></div>
+              <div role="columnheader" class="c-entran" data-orden="entran" hidden><button type="button">Entran<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 11 3 6l.7-.7L8 9.6l4.3-4.3.7.7Z"/></svg></button></div>
+            </div>
+            <div class="tabla__cuerpo" id="cuerpo" role="rowgroup" tabindex="0" aria-label="Lista de recortes: con las flechas se elige uno">
+              <div class="tabla__alto" id="alto"></div>
+            </div>
+          </div>
+          <div class="vacio" id="vacio" hidden>
+            <p>Ningún recorte cumple con todo lo que buscás.</p>
+            <button class="boton boton--chico" id="limpiar-2" type="button">Limpiar filtros</button>
+          </div>
+        </section>
+
+        <section class="detalle tarjeta" id="detalle" aria-live="polite">
+          <h2 class="detalle__titulo" id="detalle-titulo">Elegí un recorte</h2>
+          <div class="detalle__cuerpo">
+            <svg class="detalle__dibujo" id="detalle-dibujo" viewBox="0 0 360 240" role="img" aria-labelledby="detalle-titulo"></svg>
+            <div>
+              <dl class="detalle__datos" id="detalle-datos"></dl>
+            </div>
+          </div>
+          <p class="detalle__nota" id="detalle-nota"></p>
+          <div class="detalle__acciones" id="detalle-acciones" hidden>
+            <button class="boton boton--chico" id="copiar" type="button">Copiar el número</button>
+            <span class="detalle__copiado" id="copiado" role="status"></span>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="sobrantes.js?v=928a626165" defer></script>
+</body>
+</html>
