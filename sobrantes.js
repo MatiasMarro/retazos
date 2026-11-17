@@ -267,7 +267,7 @@
       columnas.veta.push(conVeta ? 1 + Math.floor(r() * 2) : 0);
       columnas.fecha.push(desde + Math.floor(r() * 300));
     }
-    return { ...datos, placas, sobrantes: columnas };
+    return { ...datos, placas, sobrantes: columnas, formas: [] };
   }
 
   function preparar(datos, ejemplo, reales) {
@@ -281,11 +281,20 @@
     D.ancho = Float64Array.from(s.ancho, (v) => v / UM_POR_MM);
     D.veta = Uint8Array.from(s.veta);
     D.fecha = Int32Array.from(s.fecha);
+    // Los retazos con forma (en L, en U): sus esquinas y los rectángulos más grandes que entran, en mm.
+    D.forma = new Array(n).fill(null);
+    for (const f of datos.formas || []) {
+      const puntos = [];
+      for (let k = 0; k + 1 < f.puntos.length; k += 2) puntos.push([f.puntos[k] / UM_POR_MM, f.puntos[k + 1] / UM_POR_MM]);
+      const rects = [];
+      for (let k = 0; k + 3 < f.rectangulos.length; k += 4) rects.push(f.rectangulos.slice(k, k + 4).map((v) => v / UM_POR_MM));
+      D.forma[f.fila] = { puntos, rects };
+    }
     D.area = new Float64Array(n);
     let maxLargo = 0;
     let maxAncho = 0;
     for (let i = 0; i < n; i++) {
-      D.area[i] = D.largo[i] * D.ancho[i];
+      D.area[i] = D.forma[i] ? superficieDe(D.forma[i].puntos) : D.largo[i] * D.ancho[i];
       if (D.largo[i] > maxLargo) maxLargo = D.largo[i];
       if (D.ancho[i] > maxAncho) maxAncho = D.ancho[i];
     }
@@ -386,12 +395,98 @@
   }
 
   function cuantasEntran(i) {
+    if (D.forma[i]) return llenarForma(i).cuantas;
     const derecha = enUnLado(D.largo[i], F.largo) * enUnLado(D.ancho[i], F.ancho); // el largo de la pieza a lo largo
     const girada = enUnLado(D.largo[i], F.ancho) * enUnLado(D.ancho[i], F.largo);
     const v = D.veta[i];
     if (F.respetarVeta && v === 1) return derecha;
     if (F.respetarVeta && v === 2) return girada;
     return Math.max(derecha, girada);
+  }
+
+  /* La superficie de un polígono (sus esquinas en orden), en mm². */
+  function superficieDe(puntos) {
+    let doble = 0;
+    for (let k = 0; k < puntos.length; k++) {
+      const [x0, y0] = puntos[k];
+      const [x1, y1] = puntos[(k + 1) % puntos.length];
+      doble += x0 * y1 - x1 * y0;
+    }
+    return Math.abs(doble) / 2;
+  }
+
+  function textoDeForma(i) {
+    const f = D.forma[i];
+    if (!f) return "";
+    return f.puntos.length === 6 ? "en L" : `con forma de ${f.puntos.length} esquinas`;
+  }
+
+  /* Cuántas piezas entran en filas y columnas en un rectángulo de w × h al que ya se le sacó el margen del borde, y si
+     van giradas (con la veta respetada, el largo de la pieza va para el lado de la veta). */
+  function enRectangulo(w, h, v) {
+    const lado = (d, p) => Math.max(0, Math.floor((d + F.separacion) / (p + F.separacion)));
+    const derecha = lado(w, F.largo) * lado(h, F.ancho);
+    const girada = lado(w, F.ancho) * lado(h, F.largo);
+    if (F.respetarVeta && v === 1) return { n: derecha, girada: false };
+    if (F.respetarVeta && v === 2) return { n: girada, girada: true };
+    return derecha >= girada ? { n: derecha, girada: false } : { n: girada, girada: true };
+  }
+
+  /* Los rectángulos de un retazo con forma, cortados en franjas por todas sus esquinas (paradas o acostadas): cada
+     franja se llena aparte. Dos tramos seguidos de la misma altura son una sola franja. */
+  function franjas(rects, paradas) {
+    const a = paradas ? 0 : 1;
+    const b = 1 - a;
+    const cortes = [...new Set(rects.flatMap((r) => [r[a], r[a + 2]]))].sort((p, q) => p - q);
+    const tramos = [];
+    for (let k = 0; k + 1 < cortes.length; k++) {
+      const desde = cortes[k];
+      const hasta = cortes[k + 1];
+      const cubren = rects
+        .filter((r) => r[a] <= desde && r[a + 2] >= hasta)
+        .map((r) => [r[b], r[b + 2]])
+        .sort((p, q) => p[0] - q[0]);
+      const unidos = [];
+      for (const c of cubren) {
+        const u = unidos[unidos.length - 1];
+        if (u && c[0] <= u[1]) u[1] = Math.max(u[1], c[1]);
+        else unidos.push([c[0], c[1]]);
+      }
+      for (const u of unidos) tramos.push([desde, hasta, u[0], u[1]]);
+    }
+    tramos.sort((p, q) => p[2] - q[2] || p[3] - q[3] || p[0] - q[0]);
+    const juntos = [];
+    for (const t of tramos) {
+      const u = juntos[juntos.length - 1];
+      if (u && u[2] === t[2] && u[3] === t[3] && u[1] === t[0]) u[1] = t[1];
+      else juntos.push([...t]);
+    }
+    return juntos.map((t) => (paradas ? [t[0], t[2], t[1], t[3]] : [t[2], t[0], t[3], t[1]]));
+  }
+
+  /* Cuántas piezas entran en un retazo con forma: sus rectángulos más grandes, achicados por el margen del borde
+     (cualquier pieza con su margen que entra en la forma entra en uno de ellos); la mejor de tres maneras: el mejor
+     rectángulo solo, franjas paradas o franjas acostadas. Es una cuenta para buscar, no el acomodo del motor. */
+  function llenarForma(i) {
+    const m = F.margen;
+    const rects = D.forma[i].rects
+      .map((r) => [r[0] + m, r[1] + m, r[2] - m, r[3] - m])
+      .filter((r) => r[2] > r[0] && r[3] > r[1]);
+    const v = D.veta[i];
+    let mejor = { cuantas: 0, partes: [] };
+    const probar = (partes) => {
+      let total = 0;
+      const llenas = partes.map((r) => {
+        const e = enRectangulo(r[2] - r[0], r[3] - r[1], v);
+        total += e.n;
+        return { r, girada: e.girada };
+      });
+      if (total > mejor.cuantas) mejor = { cuantas: total, partes: llenas };
+    };
+    for (const r of rects) probar([r]);
+    probar(franjas(rects, true));
+    probar(franjas(rects, false));
+    return mejor;
   }
 
   function filtrar() {
@@ -992,11 +1087,18 @@
       p.mini.style.width = `${Math.max(3, D.largo[i] * escalaMini)}px`;
       p.mini.style.height = `${Math.max(3, D.ancho[i] * escalaMini)}px`;
       p.mini.className = D.veta[i] === 1 ? "con-veta-largo" : D.veta[i] === 2 ? "con-veta-ancho" : "";
+      p.mini.style.clipPath = D.forma[i]
+        ? `polygon(${D.forma[i].puntos
+            .map(([x, y]) => `${((x / D.largo[i]) * 100).toFixed(1)}% ${((1 - y / D.ancho[i]) * 100).toFixed(1)}%`)
+            .join(", ")})`
+        : "";
+      const forma = textoDeForma(i);
       p.numero.textContent = `S${D.numero[i]}`;
       p.placa.textContent = placa.corto;
       p.placa.title = placa.nombre;
-      p.marca.textContent = placa.marca ? `${placa.marca} · ${NOMBRE_VETA[D.veta[i]]}` : NOMBRE_VETA[D.veta[i]];
-      p.resumen.textContent = `${medida(D.largo[i], D.ancho[i])} mm · ${CORTO_VETA[D.veta[i]]}${
+      const veta = forma ? `${NOMBRE_VETA[D.veta[i]]} · ${forma}` : NOMBRE_VETA[D.veta[i]];
+      p.marca.textContent = placa.marca ? `${placa.marca} · ${veta}` : veta;
+      p.resumen.textContent = `${medida(D.largo[i], D.ancho[i])} mm${forma ? `, ${forma}` : ""} · ${CORTO_VETA[D.veta[i]]}${
         V.pieza ? ` · entran ${nF.format(D.entran[posicion])}` : ""
       }`;
       p.medida.textContent = medida(D.largo[i], D.ancho[i]);
@@ -1064,10 +1166,11 @@
     const largo = D.largo[i];
     const ancho = D.ancho[i];
     const cuantas = V.pieza ? cuantasEntran(i) : 0;
-    $("detalle-titulo").textContent = `S${D.numero[i]} · ${medida(largo, ancho)} mm`;
+    const forma = textoDeForma(i);
+    $("detalle-titulo").textContent = `S${D.numero[i]} · ${medida(largo, ancho)} mm${forma ? `, ${forma}` : ""}`;
     const filasDeDatos = [
       ["Placa", escapar(placa.nombre)],
-      ["Medida", `${escapar(medida(largo, ancho))} mm`],
+      ["Medida", `${escapar(medida(largo, ancho))} mm${forma ? ` (lo que ocupa; es ${forma})` : ""}`],
       ["Superficie", metros2(D.area[i])],
       ["Veta", NOMBRE_VETA[D.veta[i]]],
       ["Guardado", fechaTexto(D.fecha[i])],
@@ -1114,10 +1217,10 @@
     const w = largo * escala;
     const h = ancho * escala;
     const relleno = D.veta[i] === 1 ? "url(#veta-l)" : "url(#veta-a)";
-    partes.push(`<rect x="${x0}" y="${y1 - h}" width="${w}" height="${h}" style="fill:var(--recorte)"/>`);
-    if (D.veta[i]) partes.push(`<rect x="${x0}" y="${y1 - h}" width="${w}" height="${h}" fill="${relleno}"/>`);
+    partes.push(figura(i, x0, y1, escala, 'style="fill:var(--recorte)"'));
+    if (D.veta[i]) partes.push(figura(i, x0, y1, escala, `fill="${relleno}"`));
     if (cuantas) partes.push(piezasAdentro(i, x0, y1, escala));
-    partes.push(`<rect x="${x0}" y="${y1 - h}" width="${w}" height="${h}" style="fill:none;stroke:var(--recorte-borde)" stroke-width="1.5"/>`);
+    partes.push(figura(i, x0, y1, escala, 'style="fill:none;stroke:var(--recorte-borde)" stroke-width="1.5"'));
     // cotas: el largo abajo y el ancho a la izquierda
     partes.push(
       `<g style="fill:var(--texto-2)" font-size="11" font-family="IBM Plex Mono, Menlo, monospace">` +
@@ -1128,7 +1231,47 @@
     return partes.join("");
   }
 
+  /* El recorte: su rectángulo o, si tiene forma, su polígono (con Y para arriba, como en el taller). */
+  function figura(i, x0, y1, escala, atributos) {
+    const f = D.forma[i];
+    if (!f) {
+      const w = D.largo[i] * escala;
+      const h = D.ancho[i] * escala;
+      return `<rect x="${x0}" y="${y1 - h}" width="${w}" height="${h}" ${atributos}/>`;
+    }
+    const d = f.puntos
+      .map(([x, y], k) => `${k ? "L" : "M"}${(x0 + x * escala).toFixed(2)} ${(y1 - y * escala).toFixed(2)}`)
+      .join("");
+    return `<path d="${d}Z" ${atributos}/>`;
+  }
+
+  function pieza(x, y, w, h) {
+    return `<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${w.toFixed(2)}" height="${h.toFixed(2)}" style="fill:var(--pieza);stroke:var(--pieza-borde)" fill-opacity="0.55" stroke-width="0.75"/>`;
+  }
+
+  /* En un retazo con forma, las piezas de la manera que más entran: cada parte en filas y columnas desde su esquina. */
+  function piezasEnForma(i, x0, y1, escala) {
+    const partes = [];
+    let dibujadas = 0;
+    for (const { r, girada } of llenarForma(i).partes) {
+      const pl = girada ? F.ancho : F.largo;
+      const pa = girada ? F.largo : F.ancho;
+      const columnas = Math.floor((r[2] - r[0] + F.separacion) / (pl + F.separacion));
+      const filasDe = Math.floor((r[3] - r[1] + F.separacion) / (pa + F.separacion));
+      for (let f = 0; f < filasDe && dibujadas < DIBUJO_MAXIMO_DE_PIEZAS; f++) {
+        for (let c = 0; c < columnas && dibujadas < DIBUJO_MAXIMO_DE_PIEZAS; c++) {
+          const x = x0 + (r[0] + c * (pl + F.separacion)) * escala;
+          const y = y1 - (r[1] + (f + 1) * pa + f * F.separacion) * escala;
+          partes.push(pieza(x, y, pl * escala, pa * escala));
+          dibujadas++;
+        }
+      }
+    }
+    return partes.join("");
+  }
+
   function piezasAdentro(i, x0, y1, escala) {
+    if (D.forma[i]) return piezasEnForma(i, x0, y1, escala);
     const v = D.veta[i];
     const derecha = enUnLado(D.largo[i], F.largo) * enUnLado(D.ancho[i], F.ancho);
     const girada = enUnLado(D.largo[i], F.ancho) * enUnLado(D.ancho[i], F.largo);
